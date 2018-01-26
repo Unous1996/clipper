@@ -5,6 +5,7 @@
 #include <queue>
 #include <string>
 #include <vector>
+#include <cstdint>
 
 #include <boost/bimap.hpp>
 #include <redox.hpp>
@@ -84,6 +85,8 @@ class RPCService {
                    const int zmq_connection_id);
 
  private:
+
+
   void manage_service(const string address);
   void send_messages(socket_t &socket,
                      boost::bimap<int, vector<uint8_t>> &connections);
@@ -99,9 +102,13 @@ class RPCService {
           &connections_containers_map,
       int &zmq_connection_id, std::shared_ptr<redox::Redox> redis_connection);
 
+  void receiving_history_update(const std::vector<uint8_t> &connection_id);
+
   void send_heartbeat_response(socket_t &socket,
                                const vector<uint8_t> &connection_id,
                                bool request_container_metadata);
+
+  void check_container_existence(vector<uint8_t> connection_id);
 
   void shutdown_service(socket_t &socket);
   std::thread rpc_thread_;
@@ -116,6 +123,10 @@ class RPCService {
 
   std::function<void(VersionedModelId, int)> container_ready_callback_;
   std::function<void(RPCResponse)> new_response_callback_;
+
+  std::unordered_map<std::vector<uint8_t>, std::chrono::system_clock::time_point> receiving_history;
+  const double contact_gap_tolerance = 30;
+  int test_variable = 0;
 };
 
 }  // namespace rpc

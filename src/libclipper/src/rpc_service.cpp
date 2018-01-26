@@ -144,12 +144,24 @@ void RPCService::manage_service(const string address) {
 
       receive_message(socket, connections, connections_containers_map,
                       zmq_connection_id, redis_connection);
+
     }
     // Note: We send all queued messages per event loop iteration
     send_messages(socket, connections);
   }
   shutdown_service(socket);
 }
+
+    /*
+void RPCService::check_container_existence(const vector<uint8_t> connection_id){
+  auto current_time = std::chrono::system_clock::now();
+  auto last_contact_time = receiving_history[connection_id];
+  std::chrono::duration<double> time_gap = last_contact_time - current_time;
+  if( time_gap.count() > contact_gap_tolerance){
+    log_info(LOGGING_TAG_RPC, "Lose contact with a container");
+  }
+}
+*/
 
 void RPCService::shutdown_service(socket_t &socket) {
   size_t buf_size = 32;
@@ -227,7 +239,9 @@ void RPCService::receive_message(
 
   boost::bimap<int, vector<uint8_t>>::right_const_iterator connection =
       connections.right.find(connection_id);
+
   bool new_connection = (connection == connections.right.end());
+
   switch (type) {
     case MessageType::NewContainer: {
       message_t model_name;
@@ -254,7 +268,6 @@ void RPCService::receive_message(
 
         VersionedModelId model = VersionedModelId(name, version);
         log_info(LOGGING_TAG_RPC, "Container added");
-
         // Note that if the map does not have an entry for this model,
         // a new entry will be created with the default value (0).
         // This use of operator[] avoids the boilerplate of having to
@@ -269,8 +282,10 @@ void RPCService::receive_message(
 
         TaskExecutionThreadPool::create_queue(model, cur_replica_id);
         zmq_connection_id += 1;
+        //receiving_history_update(connection_id);
       }
     } break;
+
     case MessageType::ContainerContent: {
       // This message is a response to a container query
       message_t msg_id;
@@ -302,24 +317,37 @@ void RPCService::receive_message(
             vm, replica_id, container_ready_callback_, vm, replica_id);
 
         response_queue_->push(response);
+        //receiving_history_update(connection_id);
       }
     } break;
-    case MessageType::Heartbeat:
-      send_heartbeat_response(socket, connection_id, new_connection);
-      break;
+
+    case MessageType::Heartbeat: {
+        //receiving_history_update(connection_id);
+        send_heartbeat_response(socket, connection_id, new_connection);
+    } break;
   }
 }
+
+/*
+void RPCService::receiving_history_update(const vector<uint8_t> &connection_id){
+    std::chrono::system_clock::time_point current_time = std::chrono::system_clock::now();
+    receiving_history.insert(std::make_pair(connection_id, current_time));
+}
+*/
 
 void RPCService::send_heartbeat_response(socket_t &socket,
                                          const vector<uint8_t> &connection_id,
                                          bool request_container_metadata) {
   message_t type_message(sizeof(int));
   message_t heartbeat_type_message(sizeof(int));
+
   static_cast<int *>(type_message.data())[0] =
       static_cast<int>(MessageType::Heartbeat);
+
   static_cast<int *>(heartbeat_type_message.data())[0] = static_cast<int>(
       request_container_metadata ? HeartbeatType::RequestContainerMetadata
                                  : HeartbeatType::KeepAlive);
+
   socket.send(connection_id.data(), connection_id.size(), ZMQ_SNDMORE);
   socket.send("", 0, ZMQ_SNDMORE);
   socket.send(type_message, ZMQ_SNDMORE);
